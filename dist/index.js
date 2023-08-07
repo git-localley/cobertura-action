@@ -19596,18 +19596,42 @@ async function addComment(pullRequestNumber, body, reportName) {
   const comment = comments.data.find((comment) =>
     comment.body.includes(commentFilter)
   );
+
+  const bodyLines = body.split('\n');
+  const bodyChunks = [];
+  let chunk = '';
+
+  // Split the body into chunks that each have less than 65535 characters
+  for (let line of bodyLines) {
+    if ((chunk + line).length < 65535) {
+      chunk += line + '\n';
+    } else {
+      bodyChunks.push(chunk);
+      chunk = line + '\n';
+    }
+  }
+
+  // Push any remaining chunk
+  if (chunk !== '') {
+    bodyChunks.push(chunk);
+  }
+
   if (comment != null) {
-    await client.rest.issues.updateComment({
-      comment_id: comment.id,
-      body: body,
-      ...github.context.repo,
-    });
+    for (let chunk of bodyChunks) {
+      await client.rest.issues.updateComment({
+        comment_id: comment.id,
+        body: chunk,
+        ...github.context.repo,
+      });
+    }
   } else {
-    await client.rest.issues.createComment({
-      issue_number: pullRequestNumber,
-      body: body,
-      ...github.context.repo,
-    });
+    for (let chunk of bodyChunks) {
+      await client.rest.issues.createComment({
+        issue_number: pullRequestNumber,
+        body: chunk,
+        ...github.context.repo,
+      });
+    }
   }
 }
 

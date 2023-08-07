@@ -32,6 +32,10 @@ async function action(payload) {
   const showClassNames = JSON.parse(
     core.getInput("show_class_names", { required: true })
   );
+  const showEachFiles = JSON.parse(
+    core.getInput("show_each_files", { required: true })
+  );
+
   const showMissing = JSON.parse(
     core.getInput("show_missing", { required: true })
   );
@@ -61,6 +65,7 @@ async function action(payload) {
     showLine,
     showBranch,
     showClassNames,
+    showEachFiles,
     showMissing,
     showMissingMaxLength,
     linkMissingLines,
@@ -154,6 +159,7 @@ function markdownReport(reports, commit, options) {
     showLine = false,
     showBranch = false,
     showClassNames = false,
+    showEachFiles = true,
     showMissing = false,
     showMissingMaxLength = -1,
     linkMissingLines = false,
@@ -174,21 +180,23 @@ function markdownReport(reports, commit, options) {
       const fileTotal = Math.floor(file.total);
       const fileLines = Math.floor(file.line);
       const fileBranch = Math.floor(file.branch);
-      files.push([
-        escapeMarkdown(showClassNames ? file.name : file.filename),
-        `\`${fileTotal}%\``,
-        showLine ? `\`${fileLines}%\`` : undefined,
-        showBranch ? `\`${fileBranch}%\`` : undefined,
-        status(fileTotal),
-        showMissing && file.missing
-          ? formatMissingLines(
-              formatFileUrl(linkMissingLinesSourceDir, file.filename, commit),
-              file.missing,
-              showMissingMaxLength,
-              linkMissingLines
-            )
-          : undefined,
-      ]);
+      if (showEachFiles) {
+        files.push([
+          escapeMarkdown(showClassNames ? file.name : file.filename),
+          `\`${fileTotal}%\``,
+          showLine ? `\`${fileLines}%\`` : undefined,
+          showBranch ? `\`${fileBranch}%\`` : undefined,
+          status(fileTotal),
+          showMissing && file.missing
+            ? formatMissingLines(
+                formatFileUrl(linkMissingLinesSourceDir, file.filename, commit),
+                file.missing,
+                showMissingMaxLength,
+                linkMissingLines
+              )
+            : undefined,
+        ]);
+        }
     }
 
     // Construct table
