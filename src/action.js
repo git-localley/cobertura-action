@@ -33,7 +33,7 @@ async function action(payload) {
     core.getInput("show_class_names", { required: true })
   );
   const showEachFiles = JSON.parse(
-    core.getInput("show_each_files", { required: true })
+    core.getInput("show_each_files", { required: false }) || "false"
   );
 
   const showMissing = JSON.parse(
@@ -154,7 +154,7 @@ function formatMissingLines(
 }
 
 function markdownReport(reports, commit, options) {
-  const {
+  let {
     minimumCoverage = 100,
     showLine = false,
     showBranch = false,
@@ -170,33 +170,51 @@ function markdownReport(reports, commit, options) {
   const status = (total) =>
     total >= minimumCoverage ? ":white_check_mark:" : ":x:";
   // Setup files
-  const files = [];
+  const reportNodes = [];
   let output = "";
   for (const report of reports) {
     const folder = reports.length <= 1 ? "" : ` ${report.folder}`;
-    for (const file of report.files.filter(
-      (file) => filteredFiles == null || filteredFiles.includes(file.filename)
-    )) {
-      const fileTotal = Math.floor(file.total);
-      const fileLines = Math.floor(file.line);
-      const fileBranch = Math.floor(file.branch);
-      if (showEachFiles) {
-        files.push([
-          escapeMarkdown(showClassNames ? file.name : file.filename),
+    let nodes = report.files;
+    let nodesName = "File";
+
+    if (report.packages === undefined) showEachFiles = true;
+
+    if (showEachFiles) {
+      // files
+      nodes = report.files.filter(
+        (file) => filteredFiles == null || filteredFiles.includes(file.filename)
+      );
+      nodesName = "File";
+    }
+    else {
+      nodes = report.packages;      
+      nodesName = "Package";
+      showMissing = false;
+      console.log( "nodes: ", nodes );
+    }
+
+    for (const node of nodes) {
+      let name = node.name;
+      if (!showClassNames && node.filename) name = node.filename;
+
+      const fileTotal = Math.floor(node.total);
+      const fileLines = Math.floor(node.line);
+      const fileBranch = Math.floor(node.branch);
+      reportNodes.push([
+          escapeMarkdown(name),
           `\`${fileTotal}%\``,
           showLine ? `\`${fileLines}%\`` : undefined,
           showBranch ? `\`${fileBranch}%\`` : undefined,
           status(fileTotal),
-          showMissing && file.missing
+          showMissing && node.missing
             ? formatMissingLines(
-                formatFileUrl(linkMissingLinesSourceDir, file.filename, commit),
-                file.missing,
+                formatFileUrl(linkMissingLinesSourceDir, node.filename, commit),
+                node.missing,
                 showMissingMaxLength,
                 linkMissingLines
               )
             : undefined,
         ]);
-        }
     }
 
     // Construct table
@@ -215,7 +233,7 @@ function markdownReport(reports, commit, options) {
     const branchTotal = Math.floor(report.branch);
     const table = [
       [
-        "File",
+        nodesName,
         "Coverage",
         showLine ? "Lines" : undefined,
         showBranch ? "Branches" : undefined,
@@ -238,7 +256,7 @@ function markdownReport(reports, commit, options) {
         status(total),
         showMissing ? " " : undefined,
       ],
-      ...files,
+      ...reportNodes,
     ]
       .map((row) => {
         return `| ${row.filter(Boolean).join(" | ")} |`;

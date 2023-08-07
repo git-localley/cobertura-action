@@ -17,8 +17,10 @@ async function readCoverageFromFile(path, options) {
     explicitArray: false,
     mergeAttrs: true,
   });
-  const { packages } = coverage;
-  const classes = processPackages(packages);
+  const packagesXml = coverage.packages;
+  const { classes, packageNames, packages } = processPackages(packagesXml);
+  // console.log("classes.length: ", classes.length, "packages: ", packages );
+
   const files = classes
     .filter(Boolean)
     .map((klass) => {
@@ -30,9 +32,11 @@ async function readCoverageFromFile(path, options) {
       };
     })
     .filter((file) => options.skipCovered === false || file.total < 100);
+
   return {
     ...calculateRates(coverage),
-    files,
+    files, 
+    packages: packages
   };
 }
 
@@ -70,17 +74,37 @@ async function processCoverage(path, options) {
   );
 }
 
-function processPackages(packages) {
+function processPackages(packagesObj) {
+  const packages = getPackageArray(packagesObj);
+  const packageNames = packages.map((pkg) => pkg.name);
+  return {
+    classes: reducePackages(packages),
+    packages: packages.map((pkg) => {
+      return {
+        name: pkg.name,
+        filename: pkg.name,
+        missing: [],
+        ...calculateRates(pkg),
+      }
+    })
+  };
+}
+
+function getPackageArray(packages) {
   if (packages.package instanceof Array) {
-    return packages.package.map((p) => processPackage(p)).flat();
+    return packages.package;
   } else if (packages.package) {
-    return processPackage(packages.package);
+    return [packages.package];
   } else {
-    return processPackage(packages);
+    return [packages];
   }
 }
 
-function processPackage(packageObj) {
+function reducePackages(packages) {
+    return packages.map((p) => reducePackageAsClasses(p)).flat();
+}
+
+function reducePackageAsClasses(packageObj) {
   if (packageObj.classes && packageObj.classes.class instanceof Array) {
     return packageObj.classes.class;
   } else if (packageObj.classes && packageObj.classes.class) {
@@ -101,11 +125,13 @@ function processPackage(packageObj) {
 function calculateRates(element) {
   const line = parseFloat(element["line-rate"]) * 100;
   const branch = parseFloat(element["branch-rate"]) * 100;
+  const complexity = parseFloat(element["complexity"]) * 100;
   const total = line && branch ? (line + branch) / 2 : line;
   return {
     total,
     line,
     branch,
+    complexity,
   };
 }
 

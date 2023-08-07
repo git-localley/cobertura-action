@@ -53,6 +53,7 @@ test("action", async () => {
   process.env["INPUT_SHOW_LINE"] = "false";
   process.env["INPUT_MINIMUM_COVERAGE"] = "100";
   process.env["INPUT_SHOW_CLASS_NAMES"] = "false";
+  process.env["INPUT_SHOW_EACH_FILES"] = "true";
   process.env["INPUT_SHOW_MISSING"] = "false";
   process.env["INPUT_ONLY_CHANGED_FILES"] = "false";
   process.env["INPUT_PULL_REQUEST_NUMBER"] = "";
@@ -78,6 +79,7 @@ test("action triggered by workflow event", async () => {
   process.env["INPUT_SHOW_LINE"] = "false";
   process.env["INPUT_MINIMUM_COVERAGE"] = "100";
   process.env["INPUT_SHOW_CLASS_NAMES"] = "false";
+  process.env["INPUT_SHOW_EACH_FILES"] = "true";
   process.env["INPUT_ONLY_CHANGED_FILES"] = "false";
   process.env["INPUT_PULL_REQUEST_NUMBER"] = "";
   const prNumber = 1;
@@ -111,6 +113,7 @@ test("action triggered by push", async () => {
   process.env["INPUT_MINIMUM_COVERAGE"] = "100";
   process.env["INPUT_FAIL_BELOW_THRESHOLD"] = "true";
   process.env["INPUT_SHOW_CLASS_NAMES"] = "false";
+  process.env["INPUT_SHOW_EACH_FILES"] = "true";
   process.env["INPUT_ONLY_CHANGED_FILES"] = "false";
 
   const body = {
@@ -141,6 +144,7 @@ test("action passing pull request number directly", async () => {
   process.env["INPUT_SHOW_LINE"] = "false";
   process.env["INPUT_MINIMUM_COVERAGE"] = "100";
   process.env["INPUT_SHOW_CLASS_NAMES"] = "false";
+  process.env["INPUT_SHOW_EACH_FILES"] = "true";
   process.env["INPUT_SHOW_MISSING"] = "false";
   process.env["INPUT_ONLY_CHANGED_FILES"] = "false";
   process.env["INPUT_PULL_REQUEST_NUMBER"] = prNumber;
@@ -170,6 +174,7 @@ test("action only changes", async () => {
   process.env["INPUT_SHOW_LINE"] = "false";
   process.env["INPUT_MINIMUM_COVERAGE"] = "100";
   process.env["INPUT_SHOW_CLASS_NAMES"] = "false";
+  process.env["INPUT_SHOW_EACH_FILES"] = "true";
   process.env["INPUT_SHOW_MISSING"] = "false";
   process.env["INPUT_ONLY_CHANGED_FILES"] = "true";
   process.env["INPUT_PULL_REQUEST_NUMBER"] = "";
@@ -202,6 +207,7 @@ test("action with report name", async () => {
   process.env["INPUT_SHOW_LINE"] = "false";
   process.env["INPUT_MINIMUM_COVERAGE"] = "100";
   process.env["INPUT_SHOW_CLASS_NAMES"] = "false";
+  process.env["INPUT_SHOW_EACH_FILES"] = "true";
   process.env["INPUT_SHOW_MISSING"] = "false";
   process.env["INPUT_ONLY_CHANGED_FILES"] = "true";
   process.env["INPUT_REPORT_NAME"] = "Test Report";
@@ -234,6 +240,7 @@ test("action with crop missing lines", async () => {
   process.env["INPUT_SHOW_LINE"] = "false";
   process.env["INPUT_MINIMUM_COVERAGE"] = "100";
   process.env["INPUT_SHOW_CLASS_NAMES"] = "false";
+  process.env["INPUT_SHOW_EACH_FILES"] = "true";
   process.env["INPUT_SHOW_MISSING"] = "true";
   process.env["INPUT_SHOW_MISSING_MAX_LENGTH"] = "10";
   process.env["INPUT_ONLY_CHANGED_FILES"] = "false";
@@ -262,6 +269,7 @@ test("action failing on coverage below threshold", async () => {
   process.env["INPUT_MINIMUM_COVERAGE"] = "100";
   process.env["INPUT_FAIL_BELOW_THRESHOLD"] = "true";
   process.env["INPUT_SHOW_CLASS_NAMES"] = "false";
+  process.env["INPUT_SHOW_EACH_FILES"] = "true";
   process.env["INPUT_SHOW_MISSING"] = "false";
   process.env["INPUT_ONLY_CHANGED_FILES"] = "false";
   process.env["INPUT_PULL_REQUEST_NUMBER"] = prNumber;
@@ -299,6 +307,7 @@ test("action not failing on coverage above threshold", async () => {
   process.env["INPUT_MINIMUM_COVERAGE"] = "82";
   process.env["INPUT_FAIL_BELOW_THRESHOLD"] = "true";
   process.env["INPUT_SHOW_CLASS_NAMES"] = "false";
+  process.env["INPUT_SHOW_EACH_FILES"] = "true";
   process.env["INPUT_SHOW_MISSING"] = "false";
   process.env["INPUT_ONLY_CHANGED_FILES"] = "false";
   process.env["INPUT_PULL_REQUEST_NUMBER"] = prNumber;
@@ -321,6 +330,59 @@ test("action not failing on coverage above threshold", async () => {
   expect(process.exitCode).toBe(0);
   expect(process.stdout.write).toHaveBeenCalledTimes(0);
 });
+
+test("testMarkdownReport", async () => {
+  const { processCoverage } = require("./cobertura");
+  const { markdownReport } = require("./action");
+  const commit = "deadbeef";
+  const reportName = "TestReport";
+  const defaultReportName = "Coverage Report";
+
+  // "./src/fixtures/test-csharp.xml";
+  const path = "./src/fixtures/test-csharp.xml";
+
+  const reports = await processCoverage(path, {});
+
+  reports.forEach((report) => {
+    const { packages, folder } = report;
+    console.log("folder:", folder, "packages: ", packages);
+  });
+
+  let report = markdownReport( reports, commit, {
+    minimumCoverage: 0,
+    reportName: reportName,
+    showEachFiles: false,
+  })
+
+  console.log(report);
+
+  expect(
+    report
+  ).toBe(`<strong>${reportName}</strong>
+
+| Package | Coverage |   |
+| - | :-: | :-: |
+| **All files** | \`14%\` | :white_check_mark: |
+| AccountEntities | \`48%\` | :white_check_mark: |
+| LibConfig | \`39%\` | :white_check_mark: |
+| LibWeb | \`7%\` | :white_check_mark: |
+| PerplayAdminEntities | \`0%\` | :white_check_mark: |
+| CoreApp | \`16%\` | :white_check_mark: |
+| CoreCrypto | \`5%\` | :white_check_mark: |
+| PerplayAdminCoreCommon | \`0%\` | :white_check_mark: |
+| PerplayAdminProtocol | \`0%\` | :white_check_mark: |
+| TestCommon | \`12%\` | :white_check_mark: |
+| CoreCommon | \`13%\` | :white_check_mark: |
+| LibProtocol | \`86%\` | :white_check_mark: |
+| Account | \`18%\` | :white_check_mark: |
+| LibCommon | \`18%\` | :white_check_mark: |
+| CoreHavah | \`2%\` | :white_check_mark: |
+| PerplayProtocol | \`6%\` | :white_check_mark: |
+
+_Minimum allowed coverage is \`0%\`_
+
+<p align="right">Generated by :monkey: cobertura-action against deadbeef </p>`);
+  });
 
 test("markdownReport", () => {
   const { markdownReport } = require("./action");

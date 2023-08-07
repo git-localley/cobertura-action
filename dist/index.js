@@ -19374,6 +19374,10 @@ async function action(payload) {
   const showClassNames = JSON.parse(
     core.getInput("show_class_names", { required: true })
   );
+  const showEachFiles = JSON.parse(
+    core.getInput("show_each_files", { required: false }) || "false"
+  );
+
   const showMissing = JSON.parse(
     core.getInput("show_missing", { required: true })
   );
@@ -19403,6 +19407,7 @@ async function action(payload) {
     showLine,
     showBranch,
     showClassNames,
+    showEachFiles,
     showMissing,
     showMissingMaxLength,
     linkMissingLines,
@@ -19491,11 +19496,12 @@ function formatMissingLines(
 }
 
 function markdownReport(reports, commit, options) {
-  const {
+  let {
     minimumCoverage = 100,
     showLine = false,
     showBranch = false,
     showClassNames = false,
+    showEachFiles = true,
     showMissing = false,
     showMissingMaxLength = -1,
     linkMissingLines = false,
@@ -19506,31 +19512,51 @@ function markdownReport(reports, commit, options) {
   const status = (total) =>
     total >= minimumCoverage ? ":white_check_mark:" : ":x:";
   // Setup files
-  const files = [];
+  const reportNodes = [];
   let output = "";
   for (const report of reports) {
     const folder = reports.length <= 1 ? "" : ` ${report.folder}`;
-    for (const file of report.files.filter(
-      (file) => filteredFiles == null || filteredFiles.includes(file.filename)
-    )) {
-      const fileTotal = Math.floor(file.total);
-      const fileLines = Math.floor(file.line);
-      const fileBranch = Math.floor(file.branch);
-      files.push([
-        escapeMarkdown(showClassNames ? file.name : file.filename),
-        `\`${fileTotal}%\``,
-        showLine ? `\`${fileLines}%\`` : undefined,
-        showBranch ? `\`${fileBranch}%\`` : undefined,
-        status(fileTotal),
-        showMissing && file.missing
-          ? formatMissingLines(
-              formatFileUrl(linkMissingLinesSourceDir, file.filename, commit),
-              file.missing,
-              showMissingMaxLength,
-              linkMissingLines
-            )
-          : undefined,
-      ]);
+    let nodes = report.files;
+    let nodesName = "File";
+
+    if (report.packages === undefined) showEachFiles = true;
+
+    if (showEachFiles) {
+      // files
+      nodes = report.files.filter(
+        (file) => filteredFiles == null || filteredFiles.includes(file.filename)
+      );
+      nodesName = "File";
+    }
+    else {
+      nodes = report.packages;      
+      nodesName = "Package";
+      showMissing = false;
+      console.log( "nodes: ", nodes );
+    }
+
+    for (const node of nodes) {
+      let name = node.name;
+      if (!showClassNames && node.filename) name = node.filename;
+
+      const fileTotal = Math.floor(node.total);
+      const fileLines = Math.floor(node.line);
+      const fileBranch = Math.floor(node.branch);
+      reportNodes.push([
+          escapeMarkdown(name),
+          `\`${fileTotal}%\``,
+          showLine ? `\`${fileLines}%\`` : undefined,
+          showBranch ? `\`${fileBranch}%\`` : undefined,
+          status(fileTotal),
+          showMissing && node.missing
+            ? formatMissingLines(
+                formatFileUrl(linkMissingLinesSourceDir, node.filename, commit),
+                node.missing,
+                showMissingMaxLength,
+                linkMissingLines
+              )
+            : undefined,
+        ]);
     }
 
     // Construct table
@@ -19549,7 +19575,7 @@ function markdownReport(reports, commit, options) {
     const branchTotal = Math.floor(report.branch);
     const table = [
       [
-        "File",
+        nodesName,
         "Coverage",
         showLine ? "Lines" : undefined,
         showBranch ? "Branches" : undefined,
@@ -19572,7 +19598,7 @@ function markdownReport(reports, commit, options) {
         status(total),
         showMissing ? " " : undefined,
       ],
-      ...files,
+      ...reportNodes,
     ]
       .map((row) => {
         return `| ${row.filter(Boolean).join(" | ")} |`;
@@ -19596,42 +19622,18 @@ async function addComment(pullRequestNumber, body, reportName) {
   const comment = comments.data.find((comment) =>
     comment.body.includes(commentFilter)
   );
-
-  const bodyLines = body.split('\n');
-  const bodyChunks = [];
-  let chunk = '';
-
-  // Split the body into chunks that each have less than 65535 characters
-  for (let line of bodyLines) {
-    if ((chunk + line).length < 65535) {
-      chunk += line + '\n';
-    } else {
-      bodyChunks.push(chunk);
-      chunk = line + '\n';
-    }
-  }
-
-  // Push any remaining chunk
-  if (chunk !== '') {
-    bodyChunks.push(chunk);
-  }
-
   if (comment != null) {
-    for (let chunk of bodyChunks) {
-      await client.rest.issues.updateComment({
-        comment_id: comment.id,
-        body: chunk,
-        ...github.context.repo,
-      });
-    }
+    await client.rest.issues.updateComment({
+      comment_id: comment.id,
+      body: body,
+      ...github.context.repo,
+    });
   } else {
-    for (let chunk of bodyChunks) {
-      await client.rest.issues.createComment({
-        issue_number: pullRequestNumber,
-        body: chunk,
-        ...github.context.repo,
-      });
-    }
+    await client.rest.issues.createComment({
+      issue_number: pullRequestNumber,
+      body: body,
+      ...github.context.repo,
+    });
   }
 }
 
@@ -19728,8 +19730,10 @@ async function readCoverageFromFile(path, options) {
     explicitArray: false,
     mergeAttrs: true,
   });
-  const { packages } = coverage;
-  const classes = processPackages(packages);
+  const packagesXml = coverage.packages;
+  const { classes, packageNames, packages } = processPackages(packagesXml);
+  // console.log("classes.length: ", classes.length, "packages: ", packages );
+
   const files = classes
     .filter(Boolean)
     .map((klass) => {
@@ -19741,9 +19745,11 @@ async function readCoverageFromFile(path, options) {
       };
     })
     .filter((file) => options.skipCovered === false || file.total < 100);
+
   return {
     ...calculateRates(coverage),
-    files,
+    files, 
+    packages: packages
   };
 }
 
@@ -19781,17 +19787,37 @@ async function processCoverage(path, options) {
   );
 }
 
-function processPackages(packages) {
+function processPackages(packagesObj) {
+  const packages = getPackageArray(packagesObj);
+  const packageNames = packages.map((pkg) => pkg.name);
+  return {
+    classes: reducePackages(packages),
+    packages: packages.map((pkg) => {
+      return {
+        name: pkg.name,
+        filename: pkg.name,
+        missing: [],
+        ...calculateRates(pkg),
+      }
+    })
+  };
+}
+
+function getPackageArray(packages) {
   if (packages.package instanceof Array) {
-    return packages.package.map((p) => processPackage(p)).flat();
+    return packages.package;
   } else if (packages.package) {
-    return processPackage(packages.package);
+    return [packages.package];
   } else {
-    return processPackage(packages);
+    return [packages];
   }
 }
 
-function processPackage(packageObj) {
+function reducePackages(packages) {
+    return packages.map((p) => reducePackageAsClasses(p)).flat();
+}
+
+function reducePackageAsClasses(packageObj) {
   if (packageObj.classes && packageObj.classes.class instanceof Array) {
     return packageObj.classes.class;
   } else if (packageObj.classes && packageObj.classes.class) {
@@ -19812,11 +19838,13 @@ function processPackage(packageObj) {
 function calculateRates(element) {
   const line = parseFloat(element["line-rate"]) * 100;
   const branch = parseFloat(element["branch-rate"]) * 100;
+  const complexity = parseFloat(element["complexity"]) * 100;
   const total = line && branch ? (line + branch) / 2 : line;
   return {
     total,
     line,
     branch,
+    complexity,
   };
 }
 
